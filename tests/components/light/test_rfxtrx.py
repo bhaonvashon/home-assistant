@@ -1,5 +1,6 @@
 """The tests for the Rfxtrx light platform."""
 import unittest
+import time
 
 from homeassistant.bootstrap import _setup_component
 from homeassistant.components import rfxtrx as rfxtrx_core
@@ -34,14 +35,15 @@ class TestLightRfxtrx(unittest.TestCase):
                                'packetid': '0b1100cd0213c7f210010f51',
                                rfxtrx_core.ATTR_FIREEVENT: True}}}}))
 
+    def test_valid_config2(self):
         self.assertTrue(_setup_component(self.hass, 'light', {
             'light': {'platform': 'rfxtrx',
                       'automatic_add': True,
+                      'signal_repetitions': 3,
                       'devices':
                       {'213c7f216': {
                                'name': 'Test',
-                               'packetid': '0b1100cd0213c7f210010f51',
-                               'signal_repetitions': 3}}}}))
+                               'packetid': '0b1100cd0213c7f210010f51'}}}}))
 
     def test_invalid_config(self):
         """Test configuration."""
@@ -229,3 +231,51 @@ class TestLightRfxtrx(unittest.TestCase):
 
         rfxtrx_core.RECEIVED_EVT_SUBSCRIBERS[0](event)
         self.assertEqual(0, len(rfxtrx_core.RFX_DEVICES))
+
+    def test_light_transition(self):
+        """Test light transition."""
+        self.assertTrue(_setup_component(self.hass, 'light', {
+            'light': {'platform': 'rfxtrx',
+                      'devices':
+                      {'123efab1': {
+                               'name': 'Test',
+                               'packetid': '0b1100cd0213c7f210010f51'}}}}))
+
+        import RFXtrx as rfxtrxmod
+        rfxtrx_core.RFXOBJECT =\
+            rfxtrxmod.Core("", transport_protocol=rfxtrxmod.DummyTransport)
+
+        self.assertEqual(1, len(rfxtrx_core.RFX_DEVICES))
+        entity = rfxtrx_core.RFX_DEVICES['123efab1']
+
+        self.assertFalse(entity.is_on)
+
+        entity.turn_on(transition=0.5)
+        time.sleep(1)
+        self.assertTrue(entity.is_on)
+        self.assertEqual(entity.brightness, 255)
+
+        entity.turn_off(brightness=10, transition=0.5)
+        time.sleep(1)
+        self.assertTrue(entity.is_on)
+        self.assertEqual(entity.brightness, 10)
+
+        entity.turn_off(brightness=0, transition=0.1)
+        time.sleep(0.3)
+        self.assertEqual(entity.brightness, 0)
+        self.assertFalse(entity.is_on)
+
+        entity.turn_on(brightness=100, transition=0.1)
+        time.sleep(0.3)
+        self.assertTrue(entity.is_on)
+        self.assertEqual(entity.brightness, 100)
+
+        entity.turn_on(brightness=10, transition=100)
+        entity.turn_off()
+        time.sleep(0.2)
+        self.assertFalse(entity.is_on)
+        self.assertEqual(entity.brightness, 0)
+
+        entity.turn_on(brightness=255)
+        self.assertTrue(entity.is_on)
+        self.assertEqual(entity.brightness, 255)

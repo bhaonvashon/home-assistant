@@ -4,15 +4,15 @@ Support for RFXtrx lights.
 For more details about this platform, please refer to the documentation at
 https://home-assistant.io/components/light.rfxtrx/
 """
+from threading import Timer
 import logging
 
 import homeassistant.components.rfxtrx as rfxtrx
-from homeassistant.const import STATE_ON, STATE_OFF
 from homeassistant.components.light import (Light, ATTR_BRIGHTNESS,
                                             ATTR_TRANSITION)
-from threading import Timer
 
 DEPENDENCIES = ['rfxtrx']
+UPDATE_INTERVAL = 0.1
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,36 +58,34 @@ class RfxtrxLight(rfxtrx.RfxtrxDevice, Light):
         brightness = kwargs.get(ATTR_BRIGHTNESS)
         transition = kwargs.get(ATTR_TRANSITION)
 
-        if not brightness and not transition:
+        if brightness is None and transition is None:
             self._brightness = 255
             self._send_command("turn_on")
-            print("-----------aaaa")
             return
-        elif not transition:
+        elif transition is None:
             self._brightness = brightness
             _brightness = (brightness * 100 // 255)
             self._send_command("dim", _brightness)
-            print("-----------nnnnnn")
             return
 
-        print("-----------vvvvvvvvvvvvvvvvvvvvvvvvvvvvv")
         if not brightness:
             brightness = 255
         if brightness < self._brightness:
             return
         if transition == 0:
-            self.turn_on(brightness = brightness)
+            self.turn_on(brightness=brightness)
             return
-        brightness_step = 1
-        update_interval = transition/(brightness-self._brightness)
-        self._transition_update(brightness_step, brightness, update_interval)
+        brightness_step = (brightness-self._brightness)\
+            / (transition/UPDATE_INTERVAL)
+        self._transition_update(brightness_step, brightness)
 
     def turn_off(self, **kwargs):
         """Turn the light off."""
         if self.transition_timer:
-             self.transition_timer.cancel()
+            self.transition_timer.cancel()
+
         transition = kwargs.get(ATTR_TRANSITION)
-        if not transition or transition == 0:
+        if transition is None or transition == 0:
             rfxtrx.RfxtrxDevice.turn_off(self, **kwargs)
             return
 
@@ -95,18 +93,23 @@ class RfxtrxLight(rfxtrx.RfxtrxDevice, Light):
         if brightness > self._brightness:
             return
 
-        brightness_step = -1
-        update_interval = transition/(self._brightness-brightness)
-        self._transition_update(brightness_step, brightness, update_interval)
+        brightness_step = (brightness-self._brightness)\
+            / (transition/UPDATE_INTERVAL)
+        self._transition_update(brightness_step, brightness)
 
-    def _transition_update(self, brightness_step, target_brightness, update_interval):
-        self._brightness = self._brightness + brightness_step
-        if self._brightness > 0:
-            self.turn_on(brightness=self._brightness)
-        else:
-            self.turn_off()
+    def _transition_update(self, brightness_step, target_brightness):
+        new_brightness = self._brightness + brightness_step
+        if brightness_step > 0 and new_brightness >= target_brightness:
+            self.turn_on(brightness=target_brightness)
+            return
+        elif brightness_step < 0 and new_brightness <= target_brightness:
+            if target_brightness > 0:
+                self.turn_on(brightness=target_brightness)
+            else:
+                self.turn_off()
+            return
 
-        if self._brightness != target_brightness:
-             args = (brightness_step, target_brightness, update_interval)
-             self.transition_timer = \
-             Timer(update_interval, self._transition_update, args).start()
+        self.turn_on(brightness=int(new_brightness))
+        args = (brightness_step, target_brightness)
+        self.transition_timer = \
+            Timer(UPDATE_INTERVAL, self._transition_update, args).start()

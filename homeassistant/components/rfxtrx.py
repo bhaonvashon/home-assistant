@@ -190,7 +190,7 @@ def apply_received_command(event):
         if event.values['Command'] == 'On'\
                 or event.values['Command'] == 'Off':
             if hasattr(RFX_DEVICES[device_id], 'brightness')\
-                and RFX_DEVICES[device_id].transition_timer:
+                    and RFX_DEVICES[device_id].transition_timer:
                 RFX_DEVICES[device_id].transition_timer.cancel()
 
             # Update the rfxtrx device state
