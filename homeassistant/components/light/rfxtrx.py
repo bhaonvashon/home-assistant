@@ -6,6 +6,7 @@ https://home-assistant.io/components/light.rfxtrx/
 """
 from threading import Timer
 import logging
+import time
 
 import homeassistant.components.rfxtrx as rfxtrx
 from homeassistant.components.light import (Light, ATTR_BRIGHTNESS,
@@ -53,49 +54,48 @@ class RfxtrxLight(rfxtrx.RfxtrxDevice, Light):
 
     def turn_on(self, **kwargs):
         """Turn the light on."""
-        if self.transition_timer:
-            self.transition_timer.cancel()
+        self._stop_transition()
+
         brightness = kwargs.get(ATTR_BRIGHTNESS)
         transition = kwargs.get(ATTR_TRANSITION)
 
-        if brightness is None and transition is None:
-            self._brightness = 255
-            self._send_command("turn_on")
-            return
-        elif transition is None:
-            self._brightness = brightness
-            _brightness = (brightness * 100 // 255)
-            self._send_command("dim", _brightness)
+        if transition is None or transition == 0:
+            if brightness is None:
+                self._brightness = 255
+                self._send_command("turn_on")
+            else:
+                if int(brightness) == self._brightness:
+                    return
+                self._brightness = brightness
+                _brightness = (brightness * 100 // 255)
+                self._send_command("dim", _brightness)
             return
 
-        if not brightness:
+        if brightness is None:
             brightness = 255
-        if brightness < self._brightness:
-            return
-        if transition == 0:
-            self.turn_on(brightness=brightness)
-            return
+
         brightness_step = (brightness-self._brightness)\
             / (transition/UPDATE_INTERVAL)
         self._transition_update(brightness_step, brightness)
 
     def turn_off(self, **kwargs):
         """Turn the light off."""
-        if self.transition_timer:
-            self.transition_timer.cancel()
+        self._stop_transition()
 
         transition = kwargs.get(ATTR_TRANSITION)
         if transition is None or transition == 0:
             rfxtrx.RfxtrxDevice.turn_off(self, **kwargs)
             return
-
         brightness = kwargs.get(ATTR_BRIGHTNESS, 0)
-        if brightness > self._brightness:
-            return
 
         brightness_step = (brightness-self._brightness)\
             / (transition/UPDATE_INTERVAL)
         self._transition_update(brightness_step, brightness)
+
+    def update_state(self, state, brightness=0):
+        """Update det state of the device."""
+        self._stop_transition()
+        rfxtrx.RfxtrxDevice.update_state(self, state, brightness)
 
     def _transition_update(self, brightness_step, target_brightness):
         new_brightness = self._brightness + brightness_step
@@ -110,6 +110,15 @@ class RfxtrxLight(rfxtrx.RfxtrxDevice, Light):
             return
 
         self.turn_on(brightness=int(new_brightness))
+
         args = (brightness_step, target_brightness)
         self.transition_timer = \
-            Timer(UPDATE_INTERVAL, self._transition_update, args).start()
+            Timer(UPDATE_INTERVAL, self._transition_update, args)
+        self.transition_timer.start()
+
+    def _stop_transition(self):
+        if self.transition_timer is None:
+            return
+        self.transition_timer.cancel()
+        while not self.transition_timer.finished:
+            time.sleep(0.05)

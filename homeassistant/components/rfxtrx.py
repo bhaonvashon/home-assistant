@@ -189,27 +189,20 @@ def apply_received_command(event):
 
         if event.values['Command'] == 'On'\
                 or event.values['Command'] == 'Off':
-            if hasattr(RFX_DEVICES[device_id], 'brightness')\
-                    and RFX_DEVICES[device_id].transition_timer:
-                RFX_DEVICES[device_id].transition_timer.cancel()
-
             # Update the rfxtrx device state
             is_on = event.values['Command'] == 'On'
             # pylint: disable=protected-access
-            RFX_DEVICES[device_id]._state = is_on
+            RFX_DEVICES[device_id].update_state(is_on)
             RFX_DEVICES[device_id].update_ha_state()
 
         elif hasattr(RFX_DEVICES[device_id], 'brightness')\
                 and event.values['Command'] == 'Set level':
-            if RFX_DEVICES[device_id].transition_timer:
-                RFX_DEVICES[device_id].transition_timer.cancel()
-            # pylint: disable=protected-access
-            RFX_DEVICES[device_id]._brightness = \
-                (event.values['Dim level'] * 255 // 100)
+
+            _brightness = (event.values['Dim level'] * 255 // 100)
 
             # Update the rfxtrx device state
-            is_on = RFX_DEVICES[device_id]._brightness > 0
-            RFX_DEVICES[device_id]._state = is_on
+            is_on = _brightness > 0
+            RFX_DEVICES[device_id].update_state(is_on, _brightness)
             RFX_DEVICES[device_id].update_ha_state()
 
         # Fire event
@@ -269,6 +262,11 @@ class RfxtrxDevice(Entity):
     def turn_off(self, **kwargs):
         """Turn the device off."""
         self._send_command("turn_off")
+
+    def update_state(self, state, brightness=0):
+        """Update det state of the device."""
+        self._state = state
+        self._brightness = brightness
 
     def _send_command(self, command, brightness=0):
         if not self._event:
